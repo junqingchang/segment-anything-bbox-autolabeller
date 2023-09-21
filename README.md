@@ -1,6 +1,8 @@
 # Segment Anything BBox Labeller
 A bbox labeller built on [facebookresearch's segment anything](https://github.com/facebookresearch/segment-anything)
 
+![sample image](https://github.com/junqingchang/segment-anything-bbox-autolabeller/blob/main/assets/sample.png?raw=true)
+
 ## Directory Structure
 ```
 model/
