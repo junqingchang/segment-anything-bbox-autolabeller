@@ -1,3 +1,4 @@
+import pickle
 import cv2
 import torch
 import numpy as np
@@ -11,9 +12,9 @@ import argparse
 
 from segment_anything import sam_model_registry, SamPredictor
 from torchvision.ops import masks_to_boxes
-from common import PredictorInput
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+PREDICTOR_INPUTS = 'store.pickle'
 
 parser = argparse.ArgumentParser(prog='SegmentAnythingBBoxLabellerBatch', description='Generate mask, metadata, overlay for iamge')
 parser.add_argument('-o', '--output_dir', type=str, default='sample_outputs', help='output directory for generated mask and metadata')
@@ -45,6 +46,10 @@ class SegmentAnythingBBoxLabellerBatch:
     self.label_button = tk.Button(root, text="Label Images", command=self.label_image)
     self.label_button.pack()
 
+    # Button to clear predictor inputs
+    self.clear_button = tk.Button(root, text="Clear", command=self.clear_predictor_inputs)
+    self.clear_button.pack()
+
     # Label to display coordinates
     self.coordinates_label = tk.Label(root, text="Click on the image to detect coordinates")
     self.coordinates_label.pack()
@@ -62,6 +67,22 @@ class SegmentAnythingBBoxLabellerBatch:
 
     self.filepaths = None
 
+  def save_predictor_inputs(self):
+    with open(PREDICTOR_INPUTS, "wb") as outfile:
+      pickle.dump(self.predictor_inputs, outfile)
+
+  def load_predictor_inputs(self):
+    if not os.path.exists(PREDICTOR_INPUTS):
+      return
+
+    with open(PREDICTOR_INPUTS, "rb") as infile:
+      self.predictor_inputs = pickle.load(infile)
+
+  def clear_predictor_inputs(self):
+    print('History cleared!')
+    self.predictor_inputs = []
+    self.save_predictor_inputs()
+
   def is_supported_filetype(self, file):
     if file.endswith('.jpg'):
       return True
@@ -76,8 +97,9 @@ class SegmentAnythingBBoxLabellerBatch:
 
   def load_next_image(self):
     if self.image is not None:
-      predictor_input = PredictorInput(self.image_filepath, self.point_coords, self.point_labels)
+      predictor_input = self.PredictorInput(self.image_filepath, self.point_coords, self.point_labels)
       self.predictor_inputs.append(predictor_input)
+      self.save_predictor_inputs()
 
     next_image = next(self.filepaths)
     if next_image is not None:
@@ -111,34 +133,40 @@ class SegmentAnythingBBoxLabellerBatch:
     self.point_labels = []
 
   def show_mask(self, mask, ax, random_color=False):
+    color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
     if random_color:
       color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
-    else:
-      color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
+
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
 
   def label_image(self):
     print('Starting segmentation...')
+
     cv2.destroyAllWindows()
     self.load_button['state'] = 'disabled'
     self.label_button['state'] = 'disabled'
-    for model_input in self.predictor_inputs:
-      outfile = os.path.basename(model_input.filepath)
-      image = cv2.cvtColor(cv2.imread(model_input.filepath), cv2.COLOR_BGR2RGB)
+    self.clear_button['state'] = 'disabled'
+
+    for predictor_input in self.predictor_inputs:
+      outfile = os.path.basename(predictor_input.filepath)
+      image = cv2.cvtColor(cv2.imread(predictor_input.filepath), cv2.COLOR_BGR2RGB)
       self.predictor.set_image(image)
       masks, scores, logits = self.predictor.predict(
-        point_coords=np.array(model_input.point_coords),
-        point_labels=np.array(model_input.point_labels),
+        point_coords=np.array(predictor_input.point_coords),
+        point_labels=np.array(predictor_input.point_labels),
         multimask_output=False,
       )
+
       for i, (mask, score) in enumerate(zip(masks, scores)):
         plt.figure(figsize=(10, 10))
         plt.imshow(image)
         self.show_mask(mask, plt.gca())
+
       boxes = masks_to_boxes(torch.Tensor(masks))
       ax = plt.gca()
+
       for box in boxes:
         rect = patches.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], linewidth=1, edgecolor='r', facecolor='none')
         ax.add_patch(rect)
@@ -155,6 +183,8 @@ class SegmentAnythingBBoxLabellerBatch:
 
     self.load_button['state'] = 'normal'
     self.label_button['state'] = 'normal'
+    self.clear_button['state'] = 'normal'
+
     print('Finished!')
 
   def detect_coordinates(self, event, x, y, flags, param):
@@ -171,6 +201,14 @@ class SegmentAnythingBBoxLabellerBatch:
       # Redraw the updated image
       cv2.imshow("Image", self.image)
 
+  ############
+
+  class PredictorInput:
+    def __init__(self, filepath, point_coords, point_labels):
+      self.filepath = filepath
+      self.point_coords = point_coords
+      self.point_labels = point_labels
+
 
 if __name__ == "__main__":
   if not os.path.exists(args.output_dir):
@@ -178,4 +216,5 @@ if __name__ == "__main__":
 
   root = tk.Tk()
   app = SegmentAnythingBBoxLabellerBatch(root)
-  root.mainloop()
+  app.load_predictor_inputs()
+  app.root.mainloop()
