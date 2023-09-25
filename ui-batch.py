@@ -1,5 +1,4 @@
 import pickle
-
 import cv2
 import torch
 import numpy as np
@@ -13,7 +12,6 @@ import argparse
 
 from segment_anything import sam_model_registry, SamPredictor
 from torchvision.ops import masks_to_boxes
-from common import PredictorInput
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 PREDICTOR_INPUTS = 'store.pickle'
@@ -99,7 +97,7 @@ class SegmentAnythingBBoxLabellerBatch:
 
   def load_next_image(self):
     if self.image is not None:
-      predictor_input = PredictorInput(self.image_filepath, self.point_coords, self.point_labels)
+      predictor_input = self.PredictorInput(self.image_filepath, self.point_coords, self.point_labels)
       self.predictor_inputs.append(predictor_input)
       self.save_predictor_inputs()
 
@@ -145,25 +143,30 @@ class SegmentAnythingBBoxLabellerBatch:
 
   def label_image(self):
     print('Starting segmentation...')
+
     cv2.destroyAllWindows()
     self.load_button['state'] = 'disabled'
     self.label_button['state'] = 'disabled'
     self.clear_button['state'] = 'disabled'
-    for model_input in self.predictor_inputs:
-      outfile = os.path.basename(model_input.filepath)
-      image = cv2.cvtColor(cv2.imread(model_input.filepath), cv2.COLOR_BGR2RGB)
+
+    for predictor_input in self.predictor_inputs:
+      outfile = os.path.basename(predictor_input.filepath)
+      image = cv2.cvtColor(cv2.imread(predictor_input.filepath), cv2.COLOR_BGR2RGB)
       self.predictor.set_image(image)
       masks, scores, logits = self.predictor.predict(
-        point_coords=np.array(model_input.point_coords),
-        point_labels=np.array(model_input.point_labels),
+        point_coords=np.array(predictor_input.point_coords),
+        point_labels=np.array(predictor_input.point_labels),
         multimask_output=False,
       )
+
       for i, (mask, score) in enumerate(zip(masks, scores)):
         plt.figure(figsize=(10, 10))
         plt.imshow(image)
         self.show_mask(mask, plt.gca())
+
       boxes = masks_to_boxes(torch.Tensor(masks))
       ax = plt.gca()
+
       for box in boxes:
         rect = patches.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], linewidth=1, edgecolor='r', facecolor='none')
         ax.add_patch(rect)
@@ -181,6 +184,7 @@ class SegmentAnythingBBoxLabellerBatch:
     self.load_button['state'] = 'normal'
     self.label_button['state'] = 'normal'
     self.clear_button['state'] = 'normal'
+
     print('Finished!')
 
   def detect_coordinates(self, event, x, y, flags, param):
@@ -197,6 +201,14 @@ class SegmentAnythingBBoxLabellerBatch:
       # Redraw the updated image
       cv2.imshow("Image", self.image)
 
+  ############
+
+  class PredictorInput:
+    def __init__(self, filepath, point_coords, point_labels):
+      self.filepath = filepath
+      self.point_coords = point_coords
+      self.point_labels = point_labels
+
 
 if __name__ == "__main__":
   if not os.path.exists(args.output_dir):
@@ -205,4 +217,4 @@ if __name__ == "__main__":
   root = tk.Tk()
   app = SegmentAnythingBBoxLabellerBatch(root)
   app.load_predictor_inputs()
-  root.mainloop()
+  app.root.mainloop()
