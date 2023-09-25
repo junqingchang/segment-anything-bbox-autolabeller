@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser(
                     prog='SegmentAnythingBBoxLabeller',
                     description='Generate mask, metadata, overlay for iamge')
 parser.add_argument('-o', '--output_dir', type=str, default='sample_outputs', help='output directory for generated mask and metadata')
-parser.add_argument('-m', '--model', type=str, default='model/sam_vit_h_4b8939.pth', help='model path')
+parser.add_argument('-m', '--model', type=str, default='models/sam_vit_h_4b8939.pth', help='model path')
 parser.add_argument('-t', '--model_type', type=str, default='vit_h', help='type of model defined by segment anything')
 
 args = parser.parse_args()

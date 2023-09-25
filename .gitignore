@@ -160,11 +160,11 @@ cython_debug/
 #.idea/
 
 # models
-model/
+models/
 
 # data
-sample_inputs/
 sample_outputs/
+store.pickle
 
 # pycharm
 .idea
