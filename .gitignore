@@ -165,3 +165,6 @@ model/
 # data
 sample_inputs/
 sample_outputs/
+
+# pycharm
+.idea
