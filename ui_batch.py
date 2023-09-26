@@ -64,6 +64,7 @@ class SegmentAnythingBBoxLabellerBatch:
     self.image = None
     self.image_filepath = None
 
+    self.filepath_input = None
     self.filepaths = None
 
   def save_predictor_inputs(self):
@@ -96,7 +97,7 @@ class SegmentAnythingBBoxLabellerBatch:
 
   def load_next_image(self):
     if self.image is not None:
-      predictor_input = self.PredictorInput(self.image_filepath, self.point_coords, self.point_labels)
+      predictor_input = self.PredictorInput(self.filepath_input, self.image_filepath, self.point_coords, self.point_labels)
       self.predictor_inputs.append(predictor_input)
       self.save_predictor_inputs()
 
@@ -109,8 +110,14 @@ class SegmentAnythingBBoxLabellerBatch:
     if not file_dir:
       return
 
-    dir, dirs, files = next(os.walk(file_dir))
-    self.filepaths = (os.path.join(dir, file) for file in files if self.is_supported_filetype(file))
+    self.filepath_input = file_dir
+    filepaths = []
+    for root, dirs, files in os.walk(file_dir):
+      for file in files:
+        if self.is_supported_filetype(file):
+          filepaths.append(os.path.join(root, file))
+
+    self.filepaths = iter(filepaths)
     self.load_next_image()
 
   def load_image(self, file_path):
@@ -149,7 +156,9 @@ class SegmentAnythingBBoxLabellerBatch:
     self.clear_button['state'] = 'disabled'
 
     for predictor_input in self.predictor_inputs:
-      outfile = os.path.basename(predictor_input.filepath)
+      outpath = predictor_input.filepath.replace(predictor_input.root, args.output_dir)
+      os.makedirs(os.path.dirname(outpath), exist_ok=True)
+
       image = cv2.cvtColor(cv2.imread(predictor_input.filepath), cv2.COLOR_BGR2RGB)
       self.predictor.set_image(image)
       masks, scores, logits = self.predictor.predict(
@@ -171,13 +180,13 @@ class SegmentAnythingBBoxLabellerBatch:
         ax.add_patch(rect)
 
       box_coords = [' '.join(map(str, map(int, box.tolist()))) for box in boxes]
-      with open(os.path.join(args.output_dir, f'{outfile}.bbox-points.txt'), 'w') as f:
+      with open(os.path.join(os.path.dirname(outpath), f'{os.path.basename(outpath)}.bbox-points.txt'), 'w') as f:
         f.writelines(box_coords)
 
       plt.title(f"Mask {i + 1}, Score: {score:.3f}", fontsize=18)
       plt.axis('off')
       fig = plt.gcf()
-      fig.savefig(os.path.join(args.output_dir, f'{outfile}'))
+      fig.savefig(outpath)
       # fig.show()
 
     self.load_button['state'] = 'normal'
@@ -203,7 +212,8 @@ class SegmentAnythingBBoxLabellerBatch:
   ############
 
   class PredictorInput:
-    def __init__(self, filepath, point_coords, point_labels):
+    def __init__(self, root, filepath, point_coords, point_labels):
+      self.root = root
       self.filepath = filepath
       self.point_coords = point_coords
       self.point_labels = point_labels

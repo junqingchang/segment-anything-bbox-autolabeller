@@ -54,7 +54,8 @@ class GSAMBatch:
     self.label_button.pack()
 
     # data
-    self.filepaths = None
+    self.filepath_input = None
+    self.filepaths = []
 
   def is_supported_filetype(self, file):
     if file.endswith('.jpg'):
@@ -73,9 +74,11 @@ class GSAMBatch:
     if not file_dir:
       return
 
-    dir, dirs, files = next(os.walk(file_dir))
-    self.filepaths = [
-      os.path.join(dir, file) for file in files if self.is_supported_filetype(file)]
+    self.filepath_input = file_dir
+    for root, dirs, files in os.walk(file_dir):
+      for file in files:
+        if self.is_supported_filetype(file):
+          self.filepaths.append(os.path.join(root, file))
 
   def label_image(self):
     print('Starting segmentation...')
@@ -96,7 +99,9 @@ class GSAMBatch:
       )
 
       annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
-      cv2.imwrite(os.path.join(args.output_dir, os.path.basename(filepath)), annotated_frame)
+      outpath = filepath.replace(self.filepath_input, args.output_dir)
+      os.makedirs(os.path.dirname(outpath), exist_ok=True)
+      cv2.imwrite(outpath, annotated_frame)
 
     print('Finished!')
 
@@ -164,7 +169,9 @@ class GSAMBatch:
       annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
       # save the annotated grounded-sam image
-      cv2.imwrite(os.path.join(args.output_dir, os.path.basename(filepath)), annotated_image)
+      outpath = filepath.replace(self.filepath_input, args.output_dir)
+      os.makedirs(os.path.dirname(outpath), exist_ok=True)
+      cv2.imwrite(outpath, annotated_image)
 
     print('Finished!')
 
