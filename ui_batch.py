@@ -1,15 +1,14 @@
+import argparse
+import os
 import pickle
-import cv2
-import torch
-import numpy as np
 import tkinter as tk
 from tkinter import filedialog
 
-import matplotlib.pyplot as plt
+import cv2
 import matplotlib.patches as patches
-import os
-import argparse
-
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from segment_anything import sam_model_registry, SamPredictor
 from torchvision.ops import masks_to_boxes
 
