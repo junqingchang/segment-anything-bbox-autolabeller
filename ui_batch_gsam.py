@@ -1,21 +1,38 @@
-import torch
+import argparse
+import os
 import tkinter as tk
 from tkinter import filedialog
 
-from groundingdino.util.inference import load_model, load_image, predict, annotate
 import cv2
-import os
-import argparse
+import numpy as np
+import supervision as sv
+import torch
+import torchvision
+from groundingdino.util.inference import Model, load_model, load_image, predict, annotate
+from segment_anything import sam_model_registry, SamPredictor
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+DEVICE_STRING = 'cuda' if torch.cuda.is_available() else 'cpu'
+DEVICE = torch.device(DEVICE_STRING)
 
 parser = argparse.ArgumentParser(prog='GSAMBatch', description='auto segmentation based on prompt')
+parser.add_argument('-gm', '--groundingdino_model',  type=str, default='models/groundingdino_swint_ogc.pth', help='model path')
+parser.add_argument('-gc', '--groundingdino_model_config', type=str, default='configs/groundingdino.py', help='config path')
+parser.add_argument('-sm', '--sam_model', type=str, default='models/sam_vit_h_4b8939.pth', help='sam model path')
+parser.add_argument('-st', '--sam_model_type', type=str, default='vit_h', help='sam model type')
 parser.add_argument('-o', '--output_dir', type=str, default='sample_outputs', help='output directory')
-parser.add_argument('-m', '--model',  type=str, default='models/groundingdino_swint_ogc.pth', help='model path')
-parser.add_argument('-c', '--config', type=str, default='configs/gsam.py', help='config path')
-parser.add_argument('-p', '--prompt', type=str, default='ships', help='objects to search for, delimited with fullstops')
+parser.add_argument('-p', '--prompt', type=str, default='ships', help='search string delimited with commas')
 
 args = parser.parse_args()
+
+# Building GroundingDINO inference model
+grounding_dino_model = Model(model_config_path=args.groundingdino_model_config,
+                             model_checkpoint_path=args.groundingdino_model,
+                             device=DEVICE_STRING)
+
+# Building SAM Model and SAM Predictor
+sam = sam_model_registry[args.sam_model_type](checkpoint=args.sam_model)
+sam.to(device=DEVICE)
+sam_predictor = SamPredictor(sam)
 
 
 class GSAMBatch:
@@ -33,7 +50,7 @@ class GSAMBatch:
     self.load_button.pack()
 
     # button to label images
-    self.label_button = tk.Button(root, text="Label Images", command=self.label_image)
+    self.label_button = tk.Button(root, text="Label Images", command=self.label_image_gsam)
     self.label_button.pack()
 
     # data
@@ -75,11 +92,79 @@ class GSAMBatch:
         caption=args.prompt,
         box_threshold=BOX_THRESHOLD,
         text_threshold=TEXT_THRESHOLD,
-        device=DEVICE,
+        device=DEVICE_STRING,
       )
 
       annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
       cv2.imwrite(os.path.join(args.output_dir, os.path.basename(filepath)), annotated_frame)
+
+    print('Finished!')
+
+  def label_image_gsam(self):
+    print('Starting segmentation...')
+
+    BOX_THRESHOLD = 0.25
+    NMS_THRESHOLD = 0.8
+
+    CLASSES = args.prompt.split(",")
+
+    # Predict classes and hyper-param for GroundingDINO
+    for filepath in self.filepaths:
+
+      # load image
+      image = cv2.imread(filepath)
+
+      # detect objects
+      detections = grounding_dino_model.predict_with_classes(
+        image=image,
+        classes=CLASSES,
+        box_threshold=BOX_THRESHOLD,
+        text_threshold=BOX_THRESHOLD
+      )
+
+      # NMS post process
+      nms_idx = torchvision.ops.nms(
+        torch.from_numpy(detections.xyxy),
+        torch.from_numpy(detections.confidence),
+        NMS_THRESHOLD
+      ).numpy().tolist()
+
+      detections.xyxy = detections.xyxy[nms_idx]
+      detections.confidence = detections.confidence[nms_idx]
+      detections.class_id = detections.class_id[nms_idx]
+
+      # Prompting SAM with detected boxes
+      def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) -> np.ndarray:
+        sam_predictor.set_image(image)
+        result_masks = []
+        for box in xyxy:
+          masks, scores, logits = sam_predictor.predict(
+            box=box,
+            multimask_output=True
+          )
+          index = np.argmax(scores)
+          result_masks.append(masks[index])
+        return np.array(result_masks)
+
+      # convert detections to masks
+      detections.mask = segment(
+        sam_predictor=sam_predictor,
+        image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+        xyxy=detections.xyxy
+      )
+
+      # annotate image with detections
+      box_annotator = sv.BoxAnnotator()
+      mask_annotator = sv.MaskAnnotator()
+      labels = [
+        f"{CLASSES[class_id]} {confidence:0.2f}"
+        for _, _, confidence, class_id, _
+        in detections]
+      annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)
+      annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
+
+      # save the annotated grounded-sam image
+      cv2.imwrite(os.path.join(args.output_dir, os.path.basename(filepath)), annotated_image)
 
     print('Finished!')
 
