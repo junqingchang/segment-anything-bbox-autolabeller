@@ -37,6 +37,10 @@ class SegmentAnythingBBoxLabellerBatch:
     self.load_button = tk.Button(root, text="Load Images", command=self.load_images)
     self.load_button.pack()
 
+    # Button to load same image but different target
+    self.load_next = tk.Button(root, text="Next Target", command=self.next_target)
+    self.load_next.pack()
+
     # Button to load next image
     self.load_button = tk.Button(root, text="Next Image", command=self.load_next_image)
     self.load_button.pack()
@@ -94,6 +98,13 @@ class SegmentAnythingBBoxLabellerBatch:
       return True
 
     return False
+  
+  def next_target(self):
+    if self.image is not None:
+      predictor_input = self.PredictorInput(self.filepath_input, self.image_filepath, self.point_coords, self.point_labels)
+      self.predictor_inputs.append(predictor_input)
+      self.save_predictor_inputs()
+    self.load_image(self.image_filepath)
 
   def load_next_image(self):
     if self.image is not None:
@@ -180,7 +191,12 @@ class SegmentAnythingBBoxLabellerBatch:
         ax.add_patch(rect)
 
       box_coords = [' '.join(map(str, map(int, box.tolist()))) for box in boxes]
-      with open(os.path.join(os.path.dirname(outpath), f'{os.path.basename(outpath)}.bbox-points.txt'), 'w') as f:
+      counter = 1
+      box_file = os.path.join(os.path.dirname(outpath), f'{os.path.basename(outpath)}.bbox-{counter}-points.txt')
+      while os.path.exists(box_file):
+        counter += 1
+        box_file = os.path.join(os.path.dirname(outpath), f'{os.path.basename(outpath)}.bbox-{counter}-points.txt')
+      with open(box_file, 'w') as f:
         f.writelines(box_coords)
 
       plt.title(f"Mask {i + 1}, Score: {score:.3f}", fontsize=18)
