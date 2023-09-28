@@ -12,234 +12,306 @@ import torch
 from segment_anything import sam_model_registry, SamPredictor
 from torchvision.ops import masks_to_boxes
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-PREDICTOR_INPUTS = 'store.pickle'
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+PREDICTOR_INPUTS = "store.pickle"
 
-parser = argparse.ArgumentParser(prog='SegmentAnythingBBoxLabellerBatch', description='Generate mask, metadata, overlay for iamge')
-parser.add_argument('-o', '--output_dir', type=str, default='sample_outputs', help='output directory for generated mask and metadata')
-parser.add_argument('-m', '--model', type=str, default='models/sam_vit_h_4b8939.pth', help='model path')
-parser.add_argument('-t', '--model_type', type=str, default='vit_h', help='type of model defined by segment anything')
+parser = argparse.ArgumentParser(
+    prog="SegmentAnythingBBoxLabellerBatch",
+    description="Generate mask, metadata, overlay for iamge",
+)
+parser.add_argument(
+    "-o",
+    "--output_dir",
+    type=str,
+    default="sample_outputs",
+    help="output directory for generated mask and metadata",
+)
+parser.add_argument(
+    "-m", "--model", type=str, default="models/sam_vit_h_4b8939.pth", help="model path"
+)
+parser.add_argument(
+    "-t",
+    "--model_type",
+    type=str,
+    default="vit_h",
+    help="type of model defined by segment anything",
+)
 
 args = parser.parse_args()
 
 
 class SegmentAnythingBBoxLabellerBatch:
-  def __init__(self, root):
-    self.root = root
-    self.root.title("SegmentAnythingBBoxLabellerBatch")
-    self.root.geometry("400x150")
+    def __init__(self, root):
+        self.root = root
+        self.root.title("SegmentAnythingBBoxLabellerBatch")
+        self.root.geometry("400x200")
 
-    # pack blank to make it neater
-    self.blank = tk.Label(root, text="")
-    self.blank.pack()
+        # pack blank to make it neater
+        self.blank = tk.Label(root, text="Clear Datapoints to start on new labelling")
+        self.blank.pack()
 
-    # Button to load images
-    self.load_button = tk.Button(root, text="Load Images", command=self.load_images)
-    self.load_button.pack()
+        # Button to load images
+        self.load_button = tk.Button(root, text="Load Images", command=self.load_images)
+        self.load_button.pack()
 
-    # Button to load same image but different target
-    self.load_next = tk.Button(root, text="Next Target", command=self.next_target)
-    self.load_next.pack()
+        # Button to load same image but different target
+        self.load_next = tk.Button(root, text="Next Target", command=self.next_target)
+        self.load_next.pack()
 
-    # Button to load next image
-    self.load_button = tk.Button(root, text="Next Image", command=self.load_next_image)
-    self.load_button.pack()
+        # Button to load next image
+        self.load_button = tk.Button(
+            root, text="Next Image", command=self.load_next_image
+        )
+        self.load_button.pack()
 
-    # Button to label images
-    self.label_button = tk.Button(root, text="Label Images", command=self.label_image)
-    self.label_button.pack()
+        # Button to label images
+        self.label_button = tk.Button(
+            root, text="Label Images", command=self.label_image
+        )
+        self.label_button.pack()
 
-    # Button to clear predictor inputs
-    self.clear_button = tk.Button(root, text="Clear", command=self.clear_predictor_inputs)
-    self.clear_button.pack()
+        # Button to clear predictor inputs
+        self.clear_button = tk.Button(
+            root, text="Clear Datapoints", command=self.clear_predictor_inputs
+        )
+        self.clear_button.pack()
 
-    # Label to display coordinates
-    self.coordinates_label = tk.Label(root, text="Click on the image to detect coordinates")
-    self.coordinates_label.pack()
+        # Label to display coordinates
+        self.coordinates_label = tk.Label(
+            root, text="Click on the image to detect coordinates"
+        )
+        self.coordinates_label.pack()
 
-    # Segment Anything model loading
-    self.sam = sam_model_registry[args.model_type](checkpoint=args.model)
-    self.sam.to(device=DEVICE)
-    self.predictor = SamPredictor(self.sam)
-    self.predictor_inputs = []
+        # Segment Anything model loading
+        self.sam = sam_model_registry[args.model_type](checkpoint=args.model)
+        self.sam.to(device=DEVICE)
+        self.predictor = SamPredictor(self.sam)
+        self.predictor_inputs = []
 
-    self.point_coords = []
-    self.point_labels = []
-    self.image = None
-    self.image_filepath = None
+        self.point_coords = []
+        self.point_labels = []
+        self.image = None
+        self.image_filepath = None
 
-    self.filepath_input = None
-    self.filepaths = None
+        self.filepath_input = None
+        self.filepaths = None
 
-  def save_predictor_inputs(self):
-    with open(PREDICTOR_INPUTS, "wb") as outfile:
-      pickle.dump(self.predictor_inputs, outfile)
+    def save_predictor_inputs(self):
+        with open(PREDICTOR_INPUTS, "wb") as outfile:
+            pickle.dump(self.predictor_inputs, outfile)
 
-  def load_predictor_inputs(self):
-    if not os.path.exists(PREDICTOR_INPUTS):
-      return
+    def load_predictor_inputs(self):
+        if not os.path.exists(PREDICTOR_INPUTS):
+            return
 
-    with open(PREDICTOR_INPUTS, "rb") as infile:
-      self.predictor_inputs = pickle.load(infile)
+        with open(PREDICTOR_INPUTS, "rb") as infile:
+            self.predictor_inputs = pickle.load(infile)
 
-  def clear_predictor_inputs(self):
-    print('History cleared!')
-    self.predictor_inputs = []
-    self.save_predictor_inputs()
+    def clear_predictor_inputs(self):
+        print("History cleared!")
+        self.predictor_inputs = []
+        self.save_predictor_inputs()
 
-  def is_supported_filetype(self, file):
-    if file.endswith('.jpg'):
-      return True
-    if file.endswith('.png'):
-      return True
-    if file.endswith('.bmp'):
-      return True
-    if file.endswith('.jpeg'):
-      return True
+    def is_supported_filetype(self, file):
+        if file.endswith(".jpg"):
+            return True
+        if file.endswith(".png"):
+            return True
+        if file.endswith(".bmp"):
+            return True
+        if file.endswith(".jpeg"):
+            return True
 
-    return False
-  
-  def next_target(self):
-    if self.image is not None:
-      predictor_input = self.PredictorInput(self.filepath_input, self.image_filepath, self.point_coords, self.point_labels)
-      self.predictor_inputs.append(predictor_input)
-      self.save_predictor_inputs()
-    self.load_image(self.image_filepath)
+        return False
 
-  def load_next_image(self):
-    if self.image is not None:
-      predictor_input = self.PredictorInput(self.filepath_input, self.image_filepath, self.point_coords, self.point_labels)
-      self.predictor_inputs.append(predictor_input)
-      self.save_predictor_inputs()
+    def next_target(self):
+        if self.image is not None and self.point_coords is not None:
+            predictor_input = self.PredictorInput(
+                self.filepath_input,
+                self.image_filepath,
+                self.point_coords,
+                self.point_labels,
+            )
+            self.predictor_inputs.append(predictor_input)
+            self.save_predictor_inputs()
+        self.load_image(self.image_filepath)
 
-    next_image = next(self.filepaths)
-    if next_image is not None:
-      self.load_image(next_image)
+    def load_next_image(self):
+        if self.image is not None and self.point_coords is not None:
+            predictor_input = self.PredictorInput(
+                self.filepath_input,
+                self.image_filepath,
+                self.point_coords,
+                self.point_labels,
+            )
+            self.predictor_inputs.append(predictor_input)
+            self.save_predictor_inputs()
 
-  def load_images(self):
-    file_dir = filedialog.askdirectory()
-    if not file_dir:
-      return
+        try:
+            next_image = next(self.filepaths)
+            if next_image is not None:
+                self.load_image(next_image)
+        except StopIteration:
+            tk.messagebox.showinfo("Notice", "Reached the end of directory")
 
-    self.filepath_input = file_dir
-    filepaths = []
-    for root, dirs, files in os.walk(file_dir):
-      for file in files:
-        if self.is_supported_filetype(file):
-          filepaths.append(os.path.join(root, file))
+    def load_images(self):
+        file_dir = filedialog.askdirectory()
+        if not file_dir:
+            return
 
-    self.filepaths = iter(filepaths)
-    self.load_next_image()
+        self.filepath_input = file_dir
+        filepaths = []
+        for root, dirs, files in os.walk(file_dir):
+            for file in files:
+                if self.is_supported_filetype(file):
+                    filepaths.append(os.path.join(root, file))
 
-  def load_image(self, file_path):
-    self.clear_inputs()
-    self.image = cv2.imread(file_path)
-    self.image_filepath = file_path
-    self.display_image()
+        self.filepaths = iter(filepaths)
+        self.load_next_image()
 
-  def display_image(self):
-    if self.image is not None:
-      # Show the image using cv2.imshow in a separate window
-      cv2.imshow("Image", self.image)
-      cv2.setMouseCallback("Image", self.detect_coordinates)
+    def load_image(self, file_path):
+        self.clear_inputs()
+        self.image = cv2.imread(file_path)
+        self.image_filepath = file_path
+        self.display_image()
 
-  def clear_inputs(self):
-    self.image = None
-    self.image_filepath = None
-    self.point_coords = []
-    self.point_labels = []
+    def display_image(self):
+        if self.image is not None:
+            # Show the image using cv2.imshow in a separate window
+            cv2.imshow("Image", self.image)
+            cv2.setMouseCallback("Image", self.detect_coordinates)
 
-  def show_mask(self, mask, ax, random_color=False):
-    color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
-    if random_color:
-      color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    def clear_inputs(self):
+        self.image = None
+        self.image_filepath = None
+        self.point_coords = []
+        self.point_labels = []
 
-    h, w = mask.shape[-2:]
-    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
-    ax.imshow(mask_image)
+    def show_mask(self, mask, ax, random_color=False):
+        color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
+        if random_color:
+            color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
 
-  def label_image(self):
-    print('Starting segmentation...')
+        h, w = mask.shape[-2:]
+        mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+        ax.imshow(mask_image)
 
-    cv2.destroyAllWindows()
-    self.load_button['state'] = 'disabled'
-    self.label_button['state'] = 'disabled'
-    self.clear_button['state'] = 'disabled'
+    def label_image(self):
+        if self.image is not None and self.point_coords is not None:
+            predictor_input = self.PredictorInput(
+                self.filepath_input,
+                self.image_filepath,
+                self.point_coords,
+                self.point_labels,
+            )
+            self.predictor_inputs.append(predictor_input)
+            self.save_predictor_inputs()
+        print("Starting segmentation...")
 
-    for predictor_input in self.predictor_inputs:
-      outpath = predictor_input.filepath.replace(predictor_input.root, args.output_dir)
-      os.makedirs(os.path.dirname(outpath), exist_ok=True)
+        cv2.destroyAllWindows()
+        self.load_button["state"] = "disabled"
+        self.label_button["state"] = "disabled"
+        self.clear_button["state"] = "disabled"
 
-      image = cv2.cvtColor(cv2.imread(predictor_input.filepath), cv2.COLOR_BGR2RGB)
-      self.predictor.set_image(image)
-      masks, scores, logits = self.predictor.predict(
-        point_coords=np.array(predictor_input.point_coords),
-        point_labels=np.array(predictor_input.point_labels),
-        multimask_output=False,
-      )
+        for predictor_input in self.predictor_inputs:
+            outpath = predictor_input.filepath.replace(
+                predictor_input.root, args.output_dir
+            )
+            os.makedirs(os.path.dirname(outpath), exist_ok=True)
 
-      for i, (mask, score) in enumerate(zip(masks, scores)):
-        plt.figure(figsize=(10, 10))
-        plt.imshow(image)
-        self.show_mask(mask, plt.gca())
+            image = cv2.cvtColor(
+                cv2.imread(predictor_input.filepath), cv2.COLOR_BGR2RGB
+            )
+            self.predictor.set_image(image)
+            masks, scores, logits = self.predictor.predict(
+                point_coords=np.array(predictor_input.point_coords),
+                point_labels=np.array(predictor_input.point_labels),
+                multimask_output=False,
+            )
 
-      boxes = masks_to_boxes(torch.Tensor(masks))
-      ax = plt.gca()
+            for i, (mask, score) in enumerate(zip(masks, scores)):
+                plt.figure(figsize=(10, 10))
+                plt.imshow(image)
+                self.show_mask(mask, plt.gca())
 
-      for box in boxes:
-        rect = patches.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], linewidth=1, edgecolor='r', facecolor='none')
-        ax.add_patch(rect)
+            boxes = masks_to_boxes(torch.Tensor(masks))
+            ax = plt.gca()
 
-      box_coords = [' '.join(map(str, map(int, box.tolist()))) for box in boxes]
-      counter = 1
-      box_file = os.path.join(os.path.dirname(outpath), f'{os.path.basename(outpath)}.bbox-{counter}-points.txt')
-      while os.path.exists(box_file):
-        counter += 1
-        box_file = os.path.join(os.path.dirname(outpath), f'{os.path.basename(outpath)}.bbox-{counter}-points.txt')
-      with open(box_file, 'w') as f:
-        f.writelines(box_coords)
+            for box in boxes:
+                rect = patches.Rectangle(
+                    (box[0], box[1]),
+                    box[2] - box[0],
+                    box[3] - box[1],
+                    linewidth=1,
+                    edgecolor="r",
+                    facecolor="none",
+                )
+                ax.add_patch(rect)
 
-      plt.title(f"Mask {i + 1}, Score: {score:.3f}", fontsize=18)
-      plt.axis('off')
-      fig = plt.gcf()
-      fig.savefig(outpath)
-      # fig.show()
+            box_coords = [" ".join(map(str, map(int, box.tolist()))) for box in boxes]
+            counter = 1
+            box_file = os.path.join(
+                os.path.dirname(outpath),
+                f"{os.path.basename(outpath)}.{counter}-bbox-points.txt",
+            )
+            while os.path.exists(box_file):
+                counter += 1
+                box_file = os.path.join(
+                    os.path.dirname(outpath),
+                    f"{os.path.basename(outpath)}.{counter}-bbox-points.txt",
+                )
+            with open(box_file, "w") as f:
+                f.writelines(box_coords)
 
-    self.load_button['state'] = 'normal'
-    self.label_button['state'] = 'normal'
-    self.clear_button['state'] = 'normal'
+            plt.title(f"Mask {i + 1}, Score: {score:.3f}", fontsize=18)
+            plt.axis("off")
+            fig = plt.gcf()
+            file_extension = os.path.basename(outpath).split(".")[-1]
+            fig.savefig(
+                os.path.join(
+                    os.path.dirname(outpath),
+                    f"{os.path.basename(outpath)}.{counter}.{file_extension}",
+                )
+            )
+            # fig.show()
 
-    print('Finished!')
+        self.load_button["state"] = "normal"
+        self.label_button["state"] = "normal"
+        self.clear_button["state"] = "normal"
 
-  def detect_coordinates(self, event, x, y, flags, param):
-    if event == cv2.EVENT_LBUTTONDOWN:
-      self.coordinates_label.config(text=f"Coordinates: ({x}, {y})")
-      self.point_coords.append([x, y])
-      self.point_labels.append(1)
+        print("Finished!")
 
-      # Draw a marker on the image
-      marker_color = (0, 0, 255)  # BGR color (red)
-      marker_radius = 5
-      cv2.circle(self.image, (x, y), marker_radius, marker_color, -1)  # -1 fills the circle
+    def detect_coordinates(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.coordinates_label.config(text=f"Coordinates: ({x}, {y})")
+            self.point_coords.append([x, y])
+            self.point_labels.append(1)
 
-      # Redraw the updated image
-      cv2.imshow("Image", self.image)
+            # Draw a marker on the image
+            marker_color = (0, 0, 255)  # BGR color (red)
+            marker_radius = 5
+            cv2.circle(
+                self.image, (x, y), marker_radius, marker_color, -1
+            )  # -1 fills the circle
 
-  ############
+            # Redraw the updated image
+            cv2.imshow("Image", self.image)
 
-  class PredictorInput:
-    def __init__(self, root, filepath, point_coords, point_labels):
-      self.root = root
-      self.filepath = filepath
-      self.point_coords = point_coords
-      self.point_labels = point_labels
+    ############
+
+    class PredictorInput:
+        def __init__(self, root, filepath, point_coords, point_labels):
+            self.root = root
+            self.filepath = filepath
+            self.point_coords = point_coords
+            self.point_labels = point_labels
 
 
 if __name__ == "__main__":
-  if not os.path.exists(args.output_dir):
-    os.makedirs(args.output_dir)
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
 
-  root = tk.Tk()
-  app = SegmentAnythingBBoxLabellerBatch(root)
-  app.load_predictor_inputs()
-  app.root.mainloop()
+    root = tk.Tk()
+    app = SegmentAnythingBBoxLabellerBatch(root)
+    app.load_predictor_inputs()
+    app.root.mainloop()
